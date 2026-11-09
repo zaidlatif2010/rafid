@@ -1,0 +1,8 @@
+{
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "disk_gbps": 6.2,
+  "disk_path": "",
+  "disk_rand1": 1.3,
+  "disk_rand16": 4.2,
+  "disk_rand16_mapped": 1.4
+}

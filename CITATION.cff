@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use Rafid or its results, please cite it as below."
+title: "Rafid: running a 397B mixture-of-experts model on a laptop with expert streaming and cache-aware routing"
+type: software
+authors:
+  - given-names: "Zaid A. Lateef"
+    family-names: "A. Kareem"
+version: "0.8.4"
+date-released: "2026-11-09"
+license: MIT
+keywords:
+  - mixture of experts
+  - LLM inference
+  - expert offloading
+  - SSD streaming
+  - cache-aware routing
+  - llama.cpp
+abstract: >-
+  Rafid is a C/C++ inference platform built on llama.cpp that runs mixture-of-experts language models
+  far larger than RAM on consumer laptops. It streams experts from NVMe into a fixed RAM cache with a
+  decayed-frequency policy, prefetches the next layer's experts with that layer's own router, reads the
+  prompt while the user types, and offers graded cache-aware routing. It includes multi-turn
+  conversation tests and a token-level fidelity test for approximate routing.

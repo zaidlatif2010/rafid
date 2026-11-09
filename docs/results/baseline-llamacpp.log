@@ -1,0 +1,21 @@
+Model: C:\Users\ASUS\.lmstudio\models\unsloth\Qwen3.5-397B-A17B-GGUF\Qwen3.5-397B-A17B-UD-IQ2_XXS-00001-of-00004.gguf 
+--- gen ngl=99 
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 8150 MiB):
+  Device 0: NVIDIA GeForce RTX 5060 Laptop GPU, compute capability 12.0, VMM: yes, VRAM: 8150 MiB
+load_backend: loaded CUDA backend from D:\rafid\rafid\bin\ggml-cuda.dll
+load_backend: loaded CPU backend from D:\rafid\rafid\bin\ggml-cpu-alderlake.dll
+| model                          |       size |     params | backend    | ngl |  n_cpu_moe |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | --------------: | -------------------: |
+| qwen35moe 397B.A17B IQ2_XXS - 2.0625 bpw | 106.97 GiB |   396.35 B | CUDA       |  99 |         99 |            tg64 |          3.14 ± 0.43 |
+
+build: 240d68fcf (12167)
+--- pp ngl=99 
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 8150 MiB):
+  Device 0: NVIDIA GeForce RTX 5060 Laptop GPU, compute capability 12.0, VMM: yes, VRAM: 8150 MiB
+load_backend: loaded CUDA backend from D:\rafid\rafid\bin\ggml-cuda.dll
+load_backend: loaded CPU backend from D:\rafid\rafid\bin\ggml-cpu-alderlake.dll
+| model                          |       size |     params | backend    | ngl |  n_cpu_moe |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ---------: | --------------: | -------------------: |
+| qwen35moe 397B.A17B IQ2_XXS - 2.0625 bpw | 106.97 GiB |   396.35 B | CUDA       |  99 |         99 |           pp128 |          1.48 ± 0.01 |
+
+build: 240d68fcf (12167)

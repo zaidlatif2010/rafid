@@ -1,0 +1,61 @@
+{
+ "title": "Template: your own questions",
+ "author": "Your name or organisation",
+ "about": "One example of each common check. Copy this file, replace the questions, keep the shape, or write a suite in the page with “Write a new suite”.",
+ "version": 1,
+ "conversations": [
+  {
+   "id": "money",
+   "title": "A running total",
+   "turns": [
+    {
+     "user": "I have 1,200 dollars. I buy a laptop for 850. How much is left? End your reply with a line: Answer: <number>",
+     "checks": [{ "num": 350 }],
+     "ex": "1,200 − 850 = 350.\nAnswer: 350"
+    },
+    {
+     "user": "Then I sell an old phone for 120 and pay 45 for shipping. How much do I have now? End with a line: Answer: <number>",
+     "checks": [{ "num": 425 }],
+     "ex": "350 + 120 − 45 = 425.\nAnswer: 425"
+    }
+   ]
+  },
+  {
+   "id": "rules",
+   "title": "Instructions that must persist",
+   "turns": [
+    {
+     "user": "From now on, answer in exactly one sentence and never use commas. What is the capital of Japan?",
+     "checks": [{ "has": ["Tokyo"] }, { "max_sentences": 1 }, { "no_commas": true }],
+     "ex": "The capital of Japan is Tokyo."
+    },
+    {
+     "user": "And of Canada?",
+     "checks": [{ "has": ["Ottawa"] }, { "not_has": ["Toronto"] }, { "max_sentences": 1 }, { "no_commas": true }],
+     "ex": "The capital of Canada is Ottawa."
+    },
+    {
+     "user": "Now, as an exception, give the three primary colours of light as a JSON array of strings.",
+     "checks": [{ "json": { "strings": ["red", "green", "blue"] } }],
+     "ex": "```json\n[\"red\", \"green\", \"blue\"]\n```"
+    }
+   ]
+  },
+  {
+   "id": "history",
+   "title": "Events in order",
+   "turns": [
+    {
+     "user": "Put these in order from oldest to newest: the Moon landing, the fall of the Berlin Wall, the first football World Cup. End with a line: Answer: <the three, in order>",
+     "checks": [{ "order": ["World Cup", "Moon", "Berlin"] }],
+     "ex": "The first World Cup was in 1930, the Moon landing in 1969 and the fall of the Berlin Wall in 1989.\nAnswer: World Cup, Moon landing, Berlin Wall"
+    },
+    {
+     "user": "In which year did the earliest of them happen? End with a line: Answer: <year>",
+     "checks": [{ "num": 1930 }],
+     "ex": "Answer: 1930"
+    }
+   ]
+  }
+ ]
+}

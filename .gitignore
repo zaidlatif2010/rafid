@@ -1,0 +1,9 @@
+build/
+slim/
+profiles/
+bin/
+models/*
+!models/README.txt
+*.gguf
+*.rfprof
+*.rftrace

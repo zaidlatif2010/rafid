@@ -1,5 +1,6 @@
 cff-version: 1.2.0
 message: "If you use Rafid or its results, please cite it as below."
+repository-code: "https://github.com/zaidlatif2010/rafid"
 title: "Rafid: running a 397B mixture-of-experts model on a laptop with expert streaming and cache-aware routing"
 type: software
 authors:

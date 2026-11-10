@@ -1,0 +1,24 @@
+\begin{tikzpicture}[
+  font=\small, >=Stealth, x=1mm, y=1mm,
+  box/.style={draw, rounded corners=3pt, align=center, minimum height=12mm, inner sep=3pt, text width=38mm},
+  key/.style={box, draw=accent, line width=0.9pt, fill=accent!10},
+  dec/.style={draw, diamond, aspect=1.9, inner sep=1.5pt, align=center},
+  lab/.style={font=\footnotesize, text=black!60}]
+\node[box] (router) at (-4,0) {\textbf{Router of layer $l$}\\{\footnotesize\color{black!65} top 10 of 512 experts}};
+\node[dec] (inram) at (46,0) {In RAM?};
+\node[box] (compute) at (100,0) {\textbf{Compute the MoE layer}\\{\footnotesize\color{black!65} 10 experts, mixed by router weight}};
+\node[key] (swap) at (46,-27) {\textbf{Cache-aware routing}\\{\footnotesize low rank, and a cached expert keeps enough router weight?}};
+\node[box] (use) at (100,-27) {\textbf{Use the cached expert}\\{\footnotesize\color{black!65} with its own router weight}};
+\node[box] (nvme) at (46,-57) {\textbf{Read from NVMe}\\{\footnotesize\color{black!65} 16 unbuffered readers, 3.5\,MB per expert}};
+\node[box] (cache) at (100,-57) {\textbf{RAM expert cache}\\{\footnotesize\color{black!65} 21.5\,GB, decayed LFU}};
+\node[box] (pred) at (-10,-57) {\textbf{Predictor}\\{\footnotesize\color{black!65} router of layer $l{+}1$ on layer $l$'s hidden state}};
+\draw[->] (router) -- (inram);
+\draw[->] (inram) -- node[lab, above] {yes} (compute);
+\draw[->] (inram) -- node[lab, right] {no} (swap);
+\draw[->] (swap) -- node[lab, above] {yes} (use);
+\draw[->] (use) -- (compute);
+\draw[->] (swap) -- node[lab, right] {no, or routing off} (nvme);
+\draw[->] (nvme) -- (cache);
+\draw[->] (cache.east) -- ++(5,0) |- (compute.east);
+\draw[->] (pred) -- node[lab, above] {prefetch} (nvme);
+\end{tikzpicture}

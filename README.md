@@ -14,8 +14,9 @@ The compute engine (CPU kernels, CUDA and GGUF reading) is [llama.cpp](https://g
 
 | | |
 |---|---|
-| **Run it on Windows** | download the release `rafid-0.8.4-windows-x64-cuda13.zip`, unzip, double-click `run_rafid.bat` ([below](#running-on-windows-no-build-needed)) |
+| **Run it on Windows** | download the release `rafid-0.8.5-windows-x64-cuda13.zip`, unzip, double-click `run_rafid.bat` ([below](#running-on-windows-no-build-needed)) |
 | **Build it** | `build_windows.bat` (Visual Studio + CUDA), `./build_linux.sh`, or `tools/build_windows_mingw.sh` from Linux ([below](#rebuilding-rafidexe-development-only)) |
+| **The paper** | `docs/paper/rafid-paper.pdf` (LaTeX source alongside) |
 | **The paper's data** | `docs/results/`, with `docs/REPRODUCE.md`; `python tools/summarize_results.py docs/results` prints every table |
 | **Licence** | MIT, © 2026 Zaid A. Lateef A. Kareem (`LICENSE`) |
 | **Citing** | `CITATION.cff` |
@@ -222,7 +223,7 @@ Results are more credible when the questions come from someone else. In "Tests",
 
 ### Comparison with plain llama.cpp
 
-`baseline_llama.bat` measures plain llama.cpp's speed on the same model and the same computer. It uses the same build Rafid uses (b12169) and its own benchmark tool `llama-bench`, set up the usual way for a model larger than memory: the layers on the GPU (`-ngl 99`, falling back to 40 then 0 if they do not fit), and the experts read from the disk through mmap (`-ncmoe 99`). It measures writing (64 tokens, twice after a warm-up) and reading a question (128 tokens). Results go to `profiles/tests/results/baseline-llamacpp-*.json`, with a `.log`. Close Rafid first. Programs that guard memory, such as LM Studio with its default settings, refuse to load the model at all.
+`baseline_llama.bat` measures plain llama.cpp's speed on the same model and the same computer. It uses the same build Rafid uses (b12169) and its own benchmark tool `llama-bench`, set up the usual way for a model larger than memory: the layers on the GPU (`-ngl 99`, falling back to 40 then 0 if they do not fit), and the experts read from the disk through mmap (`-ncmoe 99`). It measures writing 64 tokens and reading a 128-token question (twice each after a warm-up), then writing and reading 512 tokens once each. The speed test in the Tests tab measures Rafid the same way. Results go to `profiles/tests/results/baseline-llamacpp-*.json`, with a `.log`. Close Rafid first. Programs that guard memory, such as LM Studio with its default settings, refuse to load the model at all.
 
 ### The fidelity test: how far routing moves the model (since 0.8.2)
 
@@ -278,7 +279,7 @@ web/index.html   the interface, English and Arabic (with the test runner and gra
 tests/           test suites (copied to profiles/tests)
 bin/             rafid.exe and the llama.cpp and CUDA libraries, ready for Windows
 tools/           build rafid.exe for Windows from Linux (MinGW), build the bundled suite, summarize results
-docs/            REPRODUCE.md and the paper's raw results (docs/results)
+docs/            the paper (docs/paper), REPRODUCE.md and its raw results (docs/results)
 ```
 
 ## Next steps

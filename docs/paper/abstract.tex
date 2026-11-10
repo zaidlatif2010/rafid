@@ -1,0 +1,7 @@
+Rafid runs Qwen3.5-397B-A17B (115 GB at 2-bit) on a laptop with 31 GB of RAM and an 8 GB GPU at 4.8--6.0 tokens/s. In matched benchmarks on the same machine it writes 1.5--2.0$\times$ faster and reads prompts 6--7$\times$ faster than llama.cpp with memory-mapped experts, while common desktop apps refuse to load the model at all.
+
+The system streams experts from NVMe into a 21.5 GB RAM cache managed by a decayed-frequency policy, and prefetches the next layer's experts by applying that layer's router to the current hidden state. It reads the prompt while the user is still typing.
+
+Optionally, cache-aware routing replaces a low-ranked expert that is not in RAM with a cached expert the router weighs nearly as much. On 10,840 teacher-forced tokens from 84 multi-turn conversations, the strongest setting keeps the exact model's top choice on 98.9--99.0\% of tokens in two runs (mean KL 0.0052--0.0053 nats, perplexity +0.29--0.32\%); exact routing reproduces bit for bit. It cuts disk traffic per token by 30\% and raises generation speed by 26\%.
+
+On the same 84 conversational questions, the exact model answers 80 correctly and the routed modes answer 80--83.

@@ -5,7 +5,7 @@
     python tools/summarize_results.py profiles/tests/results (your runs)
 
 Conversation tests: for each routing mode and conversation, the newest run of that pair counts (so a rerun
-of one conversation replaces it). Fidelity: the newest finished fidelity file. Baseline: llama-bench's JSON.
+of one conversation replaces it). Fidelity: every finished fidelity file, oldest first, and whether exact routing matched across them. Baseline: llama-bench's JSON.
 """
 import glob, json, math, os, sys
 
@@ -59,8 +59,11 @@ def main(folder):
                 print(f"  {m}: {same} of {len(keys)} answers word for word the same as off")
         print()
     fid = [(p, j) for p, j in runs if j.get("kind") == "fidelity" and j.get("finished")]
-    if fid:
-        p, j = max(fid, key=lambda x: x[1].get("updated", ""))
+    offs = {}
+    for p, j in sorted(fid, key=lambda x: x[1].get("updated", "")):
+        o = (j.get("modes") or {}).get("off")
+        if o:
+            offs[os.path.basename(p)] = (o.get("tokens"), o.get("nll"), o.get("agree_ref"))
         print(f"Fidelity test ({os.path.basename(p)}): {j['plan']['answer_tokens']} answer tokens, {j['plan']['prompt_tokens']} prompt tokens")
         print(f"{'mode':8} {'same top':>9} {'KL/token':>9} {'KL>0.1':>7} {'ppl':>8} {'tok/s':>6} {'GB/tok':>7} {'hits':>6} {'swapped':>8}")
         tot = {m: d for m, d in j["modes"].items()}
@@ -76,9 +79,26 @@ def main(folder):
             print(f"{m:8} {d['agree_off'] / n * 100:>8.2f}% {d['kl'] / n:>9.4f} {d['kl_big'] / n * 100:>6.2f}% {ppl:>8} {n / d['sec']:>6.2f} "
                   f"{st.get('bytes_read', 0) / n / 1e9:>7.3f} {st.get('hits', 0) / max(1, st.get('accesses', 1)) * 100:>5.1f}% {sw * 100:>7.1f}%")
         print()
-    for name in ("baseline-llamacpp-gen.json", "baseline-llamacpp-pp.json"):
-        p = os.path.join(folder, name)
-        if os.path.exists(p):
+    if len(set(offs.values())) == 1 and len(offs) > 1:
+        print(f"Exact routing (off) is identical in all {len(offs)} fidelity runs: same tokens, summed NLL and agreement.\n")
+    elif len(offs) > 1:
+        print("Exact routing (off) differs between fidelity runs:", offs, "\n")
+    sp = [(p, j) for p, j in runs if j.get("kind") == "speed" and j.get("rows")]
+    if sp:
+        p, j = max(sp, key=lambda x: x[1].get("updated", ""))
+        tests = j["options"]["tests"]
+        print(f"Rafid speed test ({os.path.basename(p)}), tokens/s, mean of {j['options']['reps']} runs")
+        print(f"{'mode':8} " + " ".join(f"{t:>8}" for t in tests))
+        for m in j["options"]["modes"]:
+            cells = []
+            for t in tests:
+                rs = [r for r in j["rows"] if r["mode"] == m and r["test"] == t and r.get("sec")]
+                tok, sec = sum(r["tokens"] for r in rs), sum(r["sec"] for r in rs)
+                cells.append(f"{tok / sec:>8.2f}" if sec else f"{'-':>8}")
+            print(f"{m:8} " + " ".join(cells))
+        print()
+    for p in sorted(glob.glob(os.path.join(folder, "baseline-llamacpp-*.json"))):
+        if True:
             for r in load(p):
                 test = f"tg{r['n_gen']}" if r["n_gen"] else f"pp{r['n_prompt']}"
                 print(f"llama.cpp {r['build_number']} {test}: {r['avg_ts']:.2f} ± {r['stddev_ts']:.2f} tok/s "

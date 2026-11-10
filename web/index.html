@@ -2921,6 +2921,7 @@ function renderTestsHistory() {
   if (!res.length) { box.replaceChildren(el("p", { class: "muted" }, L("No results yet.", "ما كو نتائج لحد هسه."))); return; }
   box.replaceChildren(...res.map((r) => {
     if (r.kind === "fidelity") return fidHistoryItem(r);
+    if (r.kind === "speed") return speedHistoryItem(r);
     const sm = r.summary || {};
     const line = Object.entries(sm).map(([m, x]) => `${SW_LABEL[m] || m}: ${x.turns ? ltr(pct(x.passed / x.turns)) : "—"} (${ltr(fmtInt(x.passed) + "/" + fmtInt(x.turns))})`).join(" • ");
     return el("div", { class: "thist" },
@@ -3226,7 +3227,7 @@ async function fidSources() {
   FID.refs = null;
   const suite = TST.suite;
   if (!suite) { renderFidSetup(); return; }
-  const files = ((TST.list && TST.list.results) || []).filter((r) => r.kind !== "fidelity" && r.suite === suite.file)
+  const files = ((TST.list && TST.list.results) || []).filter((r) => (r.kind || "conversations") === "conversations" && r.suite === suite.file)
     .sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
   const convs = [], sources = new Set();
   const need = new Map(suite.conversations.map((c) => [c.id, c]));
@@ -3441,6 +3442,142 @@ function fidHistoryItem(r) {
       try { FID.run = await api("/api/tests/result?file=" + encodeURIComponent(r.file)); FID.file = r.file; renderFidReport(); $("fid-report").scrollIntoView(); } catch (e) { toast(errText(e)); }
     } }, L("Show", "اعرض"))));
 }
+
+// ------------------------------------------------------------------ speed test, matched with llama-bench
+// The same measurements as llama.cpp's llama-bench in baseline_llama.bat: reading a prompt of about 128 and
+// 512 tokens from an empty conversation (pp), and writing exactly 64 and 512 tokens (tg), twice each after a
+// warm-up, once per routing mode. Writing ignores the end of turn, so every run writes the same count.
+const SPEED_TEXT = "Bridges are among the oldest works of engineering, and their history follows the history of materials. The first bridges were logs laid across streams and flat stones set in shallow water. Later builders learned to shape stone into arches, which carry weight by pressing every block against its neighbours, so that a well made arch grows stronger under load. Roman engineers built arches across wide rivers and deep valleys, and some of them still carry traffic today. For more than a thousand years after that, stone and timber remained the only choices. Iron changed everything in the eighteenth century. Cast iron is strong when it is squeezed but brittle when it is pulled, so the first iron bridges copied the shapes of stone arches. Wrought iron, and later steel, could be pulled as well as pushed, which made long beams, trusses and suspension bridges possible. A suspension bridge hangs its deck from cables that run over tall towers and are anchored in the ground at both ends. Because the cables only carry tension, they can be thin and light for their strength, and the main span can reach well over a kilometre. Concrete arrived next. On its own it behaves much like stone, but with steel bars cast inside it can resist bending, and with steel tendons pulled tight before the load arrives it can span distances that once needed steel girders. Modern cable-stayed bridges run straight cables from the towers down to the deck, which is quicker to build than a suspension bridge for medium spans. Every design is a trade between the length to be crossed, the load to be carried, the ground at each end, the wind and the money available. Engineers now model all of these with computers before a single foundation is poured, yet the basic ideas of the arch, the beam and the cable have not changed since the first builders worked them out by trial and error. When a bridge fails, the cause is rarely a lack of strength alone; more often it is a force nobody expected, such as wind that makes the deck swing, water that scours away the foundations, or a small crack that grows a little with every passing truck. Inspection and maintenance therefore matter as much as the first calculation. A good bridge is also built for the people who will cross it for a century or more, so its designers think about walking and cycling, about the view from the deck and from the river banks, and about how the structure will look when it is old.";
+const SPEED_TESTS = [
+  { id: "pp128", words: 90, max: 1 }, { id: "pp512", words: 424, max: 1 },
+  { id: "tg64", gen: 64 }, { id: "tg512", gen: 512 },
+];
+const SPD = { run: null, file: "", stop: false };
+function speedPrompt(t) {
+  if (t.gen) return "Write a long, detailed essay about the history of bridges, from the first log bridges to modern cable-stayed bridges.";
+  return SPEED_TEXT.split(/\s+/).slice(0, t.words).join(" ") + "\n\nSummarize the text above in one sentence.";
+}
+async function speedOne(t, mode) {
+  await api("/api/reset", {});
+  const params = { temperature: 0, repeat_penalty: 1.0, think: false, max_tokens: t.gen || 1, ignore_eos: !!t.gen };
+  const r = await testsChat([{ role: "user", content: speedPrompt(t) }], params, () => {});
+  if (r.error) throw Object.assign(new Error(r.error), { code: r.error });
+  const s = r.stats || {};
+  const read = (s.prompt_tokens || 0) - (s.cached_tokens || 0);
+  return t.gen
+    ? { mode, test: t.id, tokens: s.gen_tokens, sec: s.gen_sec, tps: s.gen_sec ? s.gen_tokens / s.gen_sec : null, stream: s.stream || null }
+    : { mode, test: t.id, tokens: read, sec: s.prompt_sec, tps: s.prompt_sec ? read / s.prompt_sec : null, stream: s.stream_prompt || null };
+}
+function speedSummary(run) {
+  const out = {};
+  for (const r of run.rows) {
+    const m = (out[r.mode] = out[r.mode] || {});
+    const x = (m[r.test] = m[r.test] || { tokens: 0, sec: 0, samples: [] });
+    x.tokens += r.tokens || 0; x.sec += r.sec || 0; if (r.tps) x.samples.push(r.tps);
+    x.tps = x.sec ? x.tokens / x.sec : null;
+  }
+  return out;
+}
+async function speedSave() {
+  SPD.run.updated = new Date().toISOString();
+  SPD.run.summary = speedSummary(SPD.run);
+  try { await api("/api/tests/result", { file: SPD.file, data: SPD.run }); } catch (e) { toast(errText(e)); }
+}
+function renderSpeed() {
+  const run = SPD.run, box = $("speed-report");
+  box.hidden = !run;
+  if (!run) return;
+  const sum = speedSummary(run);
+  const head = el("tr", {}, el("th", {}, L("Mode", "الوضع")), ...SPEED_TESTS.map((t) => el("th", { class: "num" }, t.id)));
+  const rows = run.options.modes.map((m) => el("tr", {}, el("td", {}, SW_LABEL[m] || m), ...SPEED_TESTS.map((t) => {
+    const x = sum[m] && sum[m][t.id];
+    return el("td", { class: "num", title: x ? x.samples.map((v) => fmtNum(v, 2)).join(", ") : "" }, x && x.tps ? `${fmtNum(x.tps, 2)} ${L("tok/s", "رمز/ث")}` : "—");
+  })));
+  $("speed-table").replaceChildren(head, ...rows);
+  $("speed-file").textContent = SPD.file ? L(`File: ${SPD.file}`, `الملف: ${SPD.file}`) : "";
+}
+async function speedStart() {
+  if (TST.running) return;
+  const en = S.status && S.status.engine;
+  if (!en || en.state !== "ready") { toast(ERRORS.no_model); return; }
+  const streaming = streamingNow();
+  const modes = streaming ? [...$("speed-modes").querySelectorAll("input:checked")].map((x) => x.value) : ["ram"];
+  if (!modes.length) { toast(L("Choose at least one routing mode.", "اختار وضع توجيه واحد على الأقل.")); return; }
+  SPD.file = `speed-${fidStamp()}.json`;
+  SPD.run = { kind: "speed", version: 1, app: S.status && S.status.app && S.status.app.version, model: en.model || null, started: new Date().toISOString(), finished: false,
+    options: { modes, reps: 2, tests: SPEED_TESTS.map((t) => t.id), matched_with: "llama-bench -p 128/512 -n 64/512 -r 2" }, rows: [] };
+  SPD.stop = false;
+  const swap0 = streaming ? (en.stream && en.stream.swap) || "off" : null;
+  testsSetRunning(true);
+  $("btn-speed").hidden = true; $("btn-speed-stop").hidden = false;
+  renderSpeed();
+  const total = modes.length * (1 + 2 * SPEED_TESTS.length);
+  let done = 0;
+  const note = (m, what) => { $("speed-state").textContent = L(`${SW_LABEL[m] || m}: ${what} (${done} of ${total})`, `${SW_LABEL[m] || m}: ${what} (${done} من ${total})`); };
+  try {
+    for (const m of modes) {
+      if (streaming) await api("/api/stream/config", { swap: m });
+      note(m, L("warming up", "تسخين"));
+      await speedOne({ id: "warm", gen: 16 }, m);
+      done++;
+      for (let rep = 0; rep < 2; rep++) {
+        for (const t of SPEED_TESTS) {
+          if (SPD.stop) throw Object.assign(new Error("stopped"), { stopped: true });
+          note(m, t.id);
+          const r = await speedOne(t, m);
+          r.rep = rep;
+          SPD.run.rows.push(r);
+          done++;
+          renderSpeed();
+          await speedSave();
+        }
+      }
+    }
+    SPD.run.finished = true;
+    await speedSave();
+    $("speed-state").textContent = L("The speed test is finished.", "خلص اختبار السرعة.");
+  } catch (e) {
+    $("speed-state").textContent = e.stopped || e.name === "AbortError" ? L("Stopped.", "توقف.") : L("Error: ", "خطأ: ") + errText(e);
+    if (SPD.run.rows.length) await speedSave();
+  } finally {
+    if (swap0) { try { await api("/api/stream/config", { swap: swap0 }); } catch (e) { /* model gone */ } }
+    try { await api("/api/reset", {}); } catch (e) { /* ignore */ }
+    $("btn-speed").hidden = false; $("btn-speed-stop").hidden = true;
+    testsSetRunning(false);
+    renderSpeed();
+    testsRefresh();
+  }
+}
+function speedHistoryItem(r) {
+  const sm = r.summary || {};
+  const line = Object.entries(sm).map(([m, x]) => `${SW_LABEL[m] || m}: pp512 ${x.pp512 && x.pp512.tps ? fmtNum(x.pp512.tps, 1) : "—"}, tg512 ${x.tg512 && x.tg512.tps ? fmtNum(x.tg512.tps, 2) : "—"}`).join(" • ");
+  return el("div", { class: "thist" },
+    el("div", {}, el("b", {}, (r.updated || "").slice(0, 16).replace("T", " ")), " ", el("span", { class: "muted" }, L("Speed test", "اختبار السرعة") + (r.finished ? "" : L(", not finished", "، ما كمل"))),
+      el("div", { class: "muted num" }, line)),
+    el("div", { class: "row" }, el("button", { class: "btn", onclick: async () => {
+      try { SPD.run = await api("/api/tests/result?file=" + encodeURIComponent(r.file)); SPD.file = r.file; renderSpeed(); $("speed-report").scrollIntoView(); } catch (e) { toast(errText(e)); }
+    } }, L("Show", "اعرض"))));
+}
+(function speedPanel() {
+  const panel = el("section", { class: "panel", id: "speed-setup" },
+    el("h2", {}, L("Speed test, matched with llama-bench", "اختبار السرعة، مطابق لـllama-bench")),
+    el("p", { class: "muted", style: "margin:0" }, L("The same measurements as llama.cpp's llama-bench in baseline_llama.bat: reading a prompt of about 128 and 512 tokens from an empty conversation, and writing exactly 64 and 512 tokens, twice each after a warm-up, once per routing mode. Close other programs while it runs.", "نفس قياسات llama-bench مال llama.cpp بـbaseline_llama.bat: قراءة سؤال بحدود 128 و512 رمز من محادثة فاضية، وكتابة 64 و512 رمز بالضبط، كل وحدة مرتين بعد تسخين، ولكل وضع توجيه. سكّر البرامج الثانية وهو شغّال.")),
+    el("fieldset", { class: "tfs", id: "speed-modes", style: "margin-top:10px" }, el("legend", {}, L("Routing modes", "أوضاع التوجيه")),
+      ...["off", "light", "medium", "strong"].map((m) => el("label", { class: "switch" }, el("input", { type: "checkbox", value: m, checked: m === "off" || m === "light" || m === "strong" ? true : null }), " " + SW_LABEL[m]))),
+    el("div", { class: "row", style: "margin-top:12px" },
+      el("button", { class: "btn primary", id: "btn-speed", onclick: speedStart }, L("Start the speed test", "ابدأ اختبار السرعة")),
+      el("button", { class: "btn danger", id: "btn-speed-stop", hidden: true, onclick: async () => { SPD.stop = true; try { await api("/api/stop", {}); } catch (e) { /* ends anyway */ } } }, L("Stop", "أوقف")),
+      el("span", { class: "muted num" }, L("about 6 minutes per mode", "حوالي 6 دقايق لكل وضع")),
+      el("span", { class: "num", id: "speed-state" })));
+  const report = el("section", { class: "panel", id: "speed-report", hidden: true },
+    el("h3", {}, L("Speed results", "نتائج السرعة")),
+    el("div", { style: "overflow-x:auto" }, el("table", { class: "ftable", id: "speed-table" })),
+    el("p", { class: "muted", style: "font-size:.88rem;margin:8px 0 0" }, L("pp = reading a prompt, tg = writing; the mean of two runs (hover for each run). Compare with baseline-llamacpp-*.json.", "pp = قراءة سؤال، tg = كتابة؛ معدل تشغيلتين (مرّر الماوس تشوف كل وحدة). قارنها ويا baseline-llamacpp-*.json.")),
+    el("p", { class: "muted num", id: "speed-file", style: "font-size:.85rem;margin:6px 0 0" }));
+  const fid = $("fid-setup");
+  fid.parentNode.insertBefore(panel, fid);
+  fid.parentNode.insertBefore(report, fid);
+})();
 
 // ------------------------------------------------------------------ boot
 renderThread();

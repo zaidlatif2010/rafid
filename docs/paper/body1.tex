@@ -1,0 +1,173 @@
+\section{Introduction}
+Mixture-of-experts (MoE) models put frontier quality within reach of a laptop's compute, but not its memory. Qwen3.5-397B-A17B activates about 17B of its 397B parameters per token. Yet even at 2 bits its weights take 115 GB, almost four times the RAM of a well-equipped laptop.
+
+The experts are 108 GB of the 115 GB. The rest (attention, shared weights, routers, embeddings) is 7.2 GB and fits in memory. Each token uses 10 of 512 experts in each of 60 layers, so at any moment most expert weights are idle. This suggests serving experts from a fast NVMe drive and keeping only a working set in RAM.
+
+General-purpose runtimes handle this poorly. Desktop apps check memory before loading and refuse a model larger than RAM. llama.cpp can run it by memory-mapping the file and letting the operating system page experts in. On our laptop this gives 3.1--3.7 tokens/s for writing and 1.5--4.9 tokens/s for reading a prompt of 128--512 tokens.
+
+Rafid is a C/C++ inference platform built on llama.cpp that treats the expert store as a first-class cache. Our contributions:
+
+\begin{enumerate}
+  \item \textbf{An expert store for consumer hardware.} Experts are streamed from NVMe into a fixed RAM cache with a decayed-frequency (LFU) policy. Prediction-driven prefetch applies the next layer's router to the current hidden state. With exact routing this alone writes 1.5--1.7$\times$ and reads prompts 6--7$\times$ faster than llama.cpp's mmap baseline.
+  \item \textbf{Reading the prompt while the user types.} The prompt is processed incrementally from the draft in the text box, and speculatively read in full during pauses. When the user presses send, the answer often starts at once.
+  \item \textbf{Graded cache-aware routing for streaming.} Three settings (light, medium, strong) let a low-ranked expert that is missing from RAM be replaced by a cached expert with a bounded loss of router weight. This raises speed by 13--26\% and lowers disk reads per token by 17--30\%.
+  \item \textbf{A token-level fidelity test for routing changes.} We read 10,840 tokens of the exact model's own answers back under each routing mode, inside their real multi-turn conversations. Per token we measure agreement with the exact model's top choice and the KL divergence from it. This is far more sensitive than counting correct answers, which cannot separate the modes on 84 questions.
+  \item \textbf{Multi-turn conversational tests in Arabic.} We use 9 conversations and 84 questions with automatic checks: running ledgers, family relations, JSON, a long report, scheduling, instruction rules, code, trip planning and history.
+\end{enumerate}
+
+\section{Related work}
+\textbf{Inference from flash.} \href{https://arxiv.org/abs/2312.11514}{LLM in a flash} (Alizadeh et al., 2023)~\cite{alizadeh2023} runs dense models up to twice the size of DRAM. It keeps parameters in flash and moves them in larger, more contiguous chunks guided by a cost model. It reuses recently activated neurons (windowing) and bundles rows and columns. Rafid applies the same idea at the granularity MoE models give for free: whole experts.
+
+\textbf{Expert offloading.} \href{https://arxiv.org/abs/2312.17238}{Eliseev and Mazur (2023)}~\cite{eliseev2023} run Mixtral-8x7B on consumer GPUs and free Colab by exploiting MoE properties for offloading. \href{https://arxiv.org/html/2411.01433v2}{HOBBIT} (Tang et al., 2024)~\cite{tang2024} loads a lower-precision copy of a missing expert. It predicts later layers' experts from gating inputs and mixes recency, frequency and precision in its cache policy; it reports up to 9.9$\times$ decode speedup on llama.cpp. These systems offload from host RAM to the GPU. Rafid targets a model four times larger than host RAM, so the slow tier is the NVMe drive.
+
+\textbf{Cache-aware routing.} The closest work is \href{https://arxiv.org/abs/2412.00099v2}{Mixture of Cache-Conditional Experts} (Skliar et al., 2024)~\cite{skliar2024}. It adds a bias to the router logits of cached experts, scaled by a running average of the logit range, and uses the biased logits only to rank experts. On phones running llama.cpp with half the experts cached, it reports more than 2$\times$ faster generation than LRU, perplexity +0.1--3\% and MMLU/GSM8K within 0.1\%. Their models have 60 to 160 experts per layer (Qwen1.5-MoE, DeepSeek-V2-Lite, Phi-3.5-MoE, Mixtral). Rafid differs in four ways:
+
+\begin{itemize}
+  \item \textbf{Missing experts only.} It swaps only experts that are neither cached nor already being read, so routing is unchanged whenever RAM already holds the expert.
+  \item \textbf{Bounded replacement.} A replacement must keep a set share of the router weight, and the top-ranked expert is never replaced.
+  \item \textbf{Scale.} It runs at 512 experts per layer and 10 per token, streamed from NVMe.
+  \item \textbf{Measurement.} It measures the effect token by token inside multi-turn conversations, rather than by perplexity alone.
+\end{itemize}
+
+\textbf{397B on a laptop.} \href{https://simonwillison.net/b/9337}{Flash-MoE} (Dan Woods, March 2026)~\cite{woods2026} ran a custom Qwen3.5-397B-A17B on a 48 GB M3 Max MacBook Pro. It streamed experts from SSD at over 5.5 tokens/s with 2-bit experts, and 4.36 tokens/s with 4-bit. It also cut the experts per token from 10 to 4. Rafid keeps all 10 experts by default, runs on a Windows laptop with 31 GB RAM and a discrete 8 GB GPU, and reports both quality and fidelity.
+
+\textbf{Memory-mapped baseline.} \href{https://github.com/ggml-org/llama.cpp}{llama.cpp}~\cite{llamacpp} maps model files into memory, so a model larger than RAM runs while the operating system pages weights in on demand. Its \texttt{--n-cpu-moe} option keeps expert tensors on the CPU side and the rest on the GPU, the usual setup for large MoE models on small GPUs. We use exactly this as our baseline.
+
+\section{System design}\label{sec:design}
+Rafid keeps everything except the experts resident, and treats the 108 GB of experts as a cache backed by the NVMe drive. It is about 8,300 lines of C/C++ on top of llama.cpp (b12169), plus a single-page web interface. Figure~\ref{fig:store} shows the path each chosen expert takes.
+
+\begin{figure}[t]
+\centering
+\input{fig_store.tex}
+\caption{The expert store, per MoE layer while writing a token. Each of the 10 chosen experts takes one of three paths; the predictor reads ahead so that the ``in RAM'' answer is yes as often as possible. Prompt batches always take the exact path: cache-aware routing acts only when one token is written at a time.}
+\label{fig:store}
+\end{figure}
+
+
+\subsection{Expert store}
+At first load, Rafid splits each GGUF shard into a slim file without expert data, keeping the original shards as the expert source. Expert tensors become slots in a fixed RAM budget; we use 21.5 GB on a 31 GB machine. The MoE layer's routing callback reports the chosen experts. Missing experts are read unbuffered (bypassing the OS page cache) by 16 I/O threads that overlap with computation; one expert is about 3.5 MB at this quantization.
+
+\textbf{Replacement policy.} A decayed least-frequently-used policy (``freq''): each use of an expert adds to a score that halves every 32 tokens, and the lowest score is evicted. An optional ``fingerprint'' mode pins the experts a profile run used most. With exact routing, the cache serves 82.7\% of expert accesses.
+
+\textbf{Prefetch.} While layer \emph{l} computes, a predictor thread applies the router of layer \emph{l}+1 to layer \emph{l}'s hidden state, and starts reading the experts it predicts. Wrong guesses are cancelled if not yet started, or sent to the front of the eviction order. Prompt batches use the same predictor on a sample of up to 128 rows.
+
+\subsection{Cache-aware routing}
+During generation (one token per step), a low-ranked expert that is neither in RAM nor already being read can be replaced. The replacement is the cached expert the router weighs most, if its router probability is at least a set share of the original's. The top-ranked expert is never replaced, and an expert already chosen for this token is never chosen twice. Mixing weights are then gathered for the new set, so the replacement contributes with its own weight.
+
+Prompt batches are never routed this way, so the prompt is always read exactly. Table~\ref{tab:modes} lists the settings, with $k=10$ experts per token.
+
+\begin{table}[t]
+\centering\small
+\caption{Cache-aware routing settings.}\label{tab:modes}
+\begin{tabular}{llll}
+\toprule
+Mode & \makecell[l]{Ranks that may\\be replaced} & \makecell[l]{Minimum weight of\\the replacement} & \makecell[l]{Expert slots\\replaced (measured)} \\
+\midrule
+off & none & --- & 0\% \\
+light & 8--10 & 70\% of the original's & 6.5\% \\
+medium & 6--10 & 50\% & 9.6\% \\
+strong & 4--10 & 30\% & 11.6\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The last column is the share of all 6.5 million expert slots in the fidelity test (Section~\ref{sec:fidelity}) that were replaced. Whether an expert is in RAM depends on what the disk delivered by then, so routed runs are not bit-for-bit repeatable; exact routing is.
+
+\subsection{Reading the prompt while the user types}
+Prompt reading is slow when experts stream from disk: every batch touches most of the experts. So Rafid starts before the user presses send.
+
+\begin{enumerate}
+  \item \textbf{Read the draft.} As the user types, the page sends the conversation plus the draft. The engine reads it up to the last complete word, minus a two-token margin, in steps of one micro-batch.
+  \item \textbf{Read it as if sent.} When typing pauses for 1.5 s, the full prompt with the generation prefix is read speculatively. If the user then sends that exact text, generation starts with no prompt work left.
+  \item \textbf{Rewind safely.} Qwen3.5 mixes attention with recurrent (Gated DeltaNet) layers, whose state cannot be truncated. Rafid keeps state snapshots at turn ends, question starts and speculative ends, and evicts speculative ones first. Edits to the draft restore the furthest snapshot that still matches.
+  \item \textbf{Yield to the user.} A chat request preempts any reading in progress. The next question can be read as soon as an answer ends.
+\end{enumerate}
+
+\subsection{Other details}
+When thinking is switched off, the template's empty think block is kept and the \texttt{<think>} and \texttt{</think>} tokens are barred from sampling. Without that, the model sometimes reopened a thinking block on its own and spent the whole answer budget in it. While working, Rafid also asks the operating system not to sleep.
+
+\section{Experimental setup}
+All runs use one consumer laptop and one model, with greedy decoding.
+
+\begin{table}[t]
+\centering\small
+\caption{Hardware, model and decoding.}\label{tab:setup}
+\begin{tabular}{lp{0.72\linewidth}}
+\toprule
+Item & Value \\
+\midrule
+CPU & Intel Core Ultra 9 275HX (24 threads) \\
+RAM & 31 GB; expert cache budget 21.5 GB \\
+GPU & NVIDIA GeForce RTX 5060 Laptop, 8 GB \\
+Disk & NVMe, 6.2 GB/s sequential, 4.2 GB/s random with 16 readers (measured by Rafid) \\
+Model & Qwen3.5-397B-A17B, unsloth UD-IQ2\_XXS GGUF, 115 GB; 60 MoE layers, 512 experts, 10 per token \\
+Decoding & temperature 0, no repetition penalty, thinking off, 700 tokens per answer (900--1,200 on long turns) \\
+Context & 65,536 tokens \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Baseline.} llama.cpp's own \texttt{llama-bench} from the same build Rafid links (b12167 binaries), on the same model files. It uses memory mapping, all layers on the GPU (\texttt{-ngl 99}) and all expert tensors on the CPU side (\texttt{-ncmoe 99}). We measure writing 64 tokens and reading a 128-token prompt, each twice after a warm-up run, then writing 512 tokens and reading a 512-token prompt once each. Rafid's matched speed test does the same from an empty conversation: a 126- and a 507-token prompt, and exactly 64 and 512 written tokens (the end-of-turn tokens barred), twice each after a warm-up, per routing mode.
+
+\textbf{Conversation suite.} Nine Arabic multi-turn conversations with 84 questions. Each question builds on the model's own earlier answers, as in real use. Every turn has automatic checks, such as a number on the final answer line, required or forbidden words, valid JSON with given fields, a word count, an exact order, or a signature line. Each turn also stores an example answer.
+
+\begin{table}[t]
+\centering\small
+\caption{The conversation suite.}\label{tab:suite}
+\begin{tabular}{lcl}
+\toprule
+Conversation & Turns & What carries across turns \\
+\midrule
+Shop ledger & 11 & running cash balance through purchases and sales \\
+Family & 12 & relations among people introduced one by one \\
+JSON & 9 & JSON about Iraqi cities, extended, then queried without JSON \\
+Hospital report & 14 & a 1,400-token fictional report, then questions on it \\
+Schedule & 5 & a weekly rota for 5 staff under constraints that change \\
+Rules & 9 & standing instructions (a signature line, word counts, no commas) \\
+Code & 8 & reading and changing short Python snippets \\
+Trip & 8 & distance, time and average-speed arithmetic for one trip \\
+Baghdad & 8 & dates and ordering of events in the city's history \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A turn with no answer is not fed back into the conversation; the example answer is used instead, and the turn counts as failed. A first run showed why: one empty answer made the model answer every later question with nothing.
+
+\textbf{Fidelity test.} For each conversation we take the newest run with exact routing in which every turn was answered (10,840 answer tokens, 4,706 prompt tokens). Each mode reads every conversation from scratch. Prompt parts are read in batches, exactly, as a prompt is read. Answer tokens are fed one at a time, as they are written, so routing applies. At each answer position \emph{t} we compare the routed distribution \emph{q}$_t$ with the exact one \emph{p}$_t$, read first under exact routing:
+
+\begin{itemize}
+  \item \textbf{Agreement:} whether argmax \emph{q}$_t$ equals argmax \emph{p}$_t$.
+  \item \textbf{KL(p$_t$ $\|$ q$_t$):} over the 32 tokens most likely under \emph{p}$_t$ plus one bucket for all the rest. This coarsened KL is a lower bound on the full KL, and close to it because those 32 tokens hold nearly all of the mass.
+  \item \textbf{Clear disagreements:} positions where that KL exceeds 0.1 nats.
+  \item \textbf{Perplexity change} of the exact answer text: exp of the mean difference in negative log-likelihood between \emph{q} and \emph{p}, minus one.
+\end{itemize}
+
+Each mode starts from the same cache state: the cache is emptied and refilled from the profile. Speed and disk numbers count answer tokens only.
+
+\section{Results}
+\subsection{Speed against llama.cpp}
+In matched runs on the same laptop, Rafid reads prompts 6--7$\times$ faster than llama.cpp and writes 1.5--2.0$\times$ faster (Table~\ref{tab:speed}, Figure~\ref{fig:speed}). Both tools ran the same tests: a 128- and a 512-token prompt read from an empty context, and exactly 64 and 512 tokens written, twice each after a warm-up (llama.cpp's 512-token runs once).
+
+\begin{table}[t]
+\centering\small
+\caption{Matched speed tests, tokens/s (speed-up over llama.cpp in brackets). Rafid's numbers are the mean of two runs.}\label{tab:speed}
+\begin{tabular}{lcccc}
+\toprule
+Test & \makecell{llama.cpp,\\mmap experts} & \makecell{Rafid,\\exact} & \makecell{Rafid,\\light} & \makecell{Rafid,\\strong} \\
+\midrule
+Read a 128-token prompt & 1.49 & 10.70 (7.2$\times$) & 10.67 & 10.94 (7.3$\times$) \\
+Read a 512-token prompt & 4.92 & 28.84 (5.9$\times$) & 30.72 & 32.02 (6.5$\times$) \\
+Write 64 tokens & 3.07 & 5.16 (1.7$\times$) & 5.64 & 6.00 (2.0$\times$) \\
+Write 512 tokens & 3.73 & 5.49 (1.5$\times$) & 6.08 & 6.53 (1.75$\times$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\input{fig_speed.tex}
+\caption{Matched speed tests on the same laptop. Left: reading a prompt; right: writing.}
+\label{fig:speed}
+\end{figure}
+
+The gain in reading comes from the expert store: a prompt batch touches most experts of every layer, and Rafid gathers them with large parallel reads and next-layer prediction instead of page faults. llama.cpp's writing speed rises from 3.1 to 3.7 tokens/s over the longer run as the operating system's page cache warms, so the writing gap narrows from 1.7$\times$ to 1.5$\times$ with exact routing. Routing adds its gain on top: 19\% over 512 tokens with strong routing. In the conversation tests of Section~\ref{sec:accuracy}, where answers average 130 tokens, Rafid wrote at 4.8 (exact) to 6.0 (strong) tokens/s.

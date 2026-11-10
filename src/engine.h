@@ -35,6 +35,7 @@ struct GenParams {
     int      max_tokens     = 2048;
     uint32_t seed           = 0xFFFFFFFFu;
     bool     think          = true;  // false: a model whose template has an enable_thinking switch answers directly
+    bool     ignore_eos     = false; // write max_tokens tokens whatever the model wants (speed measurements)
 };
 
 struct GenStats {

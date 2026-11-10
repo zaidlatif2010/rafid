@@ -782,11 +782,14 @@ bool Engine::chat(const std::vector<ChatMessage> & msgs_in, const GenParams & gp
     // asked to answer directly, the model can still open a thinking block of its own after the empty one and
     // spend the whole answer in it (Qwen3.5 at temperature 0, a plain question in a long conversation): the
     // tags are barred, so what it writes is the answer
-    if (!gp.think && think_switch_ && !think_toks_.empty()) {
-        std::vector<llama_logit_bias> bias;
-        for (int32_t t : think_toks_) bias.push_back({ t, -INFINITY });
-        llama_sampler_chain_add(smpl, llama_sampler_init_logit_bias(llama_vocab_n_tokens(vocab_), (int32_t) bias.size(), bias.data()));
+    std::vector<llama_logit_bias> bias;
+    if (!gp.think && think_switch_) for (int32_t t : think_toks_) bias.push_back({ t, -INFINITY });
+    // a speed measurement writes exactly max_tokens tokens: the end-of-turn tokens are barred too
+    if (gp.ignore_eos) {
+        const int32_t nv = llama_vocab_n_tokens(vocab_);
+        for (int32_t t = 0; t < nv; t++) if (llama_vocab_is_eog(vocab_, t)) bias.push_back({ t, -INFINITY });
     }
+    if (!bias.empty()) llama_sampler_chain_add(smpl, llama_sampler_init_logit_bias(llama_vocab_n_tokens(vocab_), (int32_t) bias.size(), bias.data()));
     if (gp.repeat_penalty > 1.0f) {
         llama_sampler_chain_add(smpl, llama_sampler_init_penalties(llama_vocab_n_tokens(vocab_), 64, gp.repeat_penalty, 0.0f, 0.0f));
     }

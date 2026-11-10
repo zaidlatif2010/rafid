@@ -6,8 +6,8 @@ type: software
 authors:
   - given-names: "Zaid A. Lateef"
     family-names: "A. Kareem"
-version: "0.8.4"
-date-released: "2026-11-09"
+version: "0.8.5"
+date-released: "2026-11-10"
 license: MIT
 keywords:
   - mixture of experts

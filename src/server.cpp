@@ -107,6 +107,7 @@ void chat_request(const json & b, std::vector<ChatMessage> & msgs, GenParams & g
     gp.repeat_penalty = jget<float>(p, "repeat_penalty", gp.repeat_penalty);
     gp.max_tokens     = std::max(1, std::min(jget<int>(p, "max_tokens", gp.max_tokens), 1 << 20));
     gp.think          = jget<bool>(p, "think", gp.think);
+    gp.ignore_eos     = jget<bool>(p, "ignore_eos", false);
     const int seed    = jget<int>(p, "seed", -1);
     if (seed >= 0) gp.seed = (uint32_t) seed;
 }

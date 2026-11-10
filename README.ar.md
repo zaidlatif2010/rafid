@@ -12,8 +12,9 @@
 
 محرك الحساب (أنوية المعالج وCUDA وقراءة ملفات GGUF) هو مكتبة [llama.cpp](https://github.com/ggml-org/llama.cpp) بالإصدار `b12167` (رخصة MIT، انظر `THIRD_PARTY_NOTICES.md`).
 
-- **التشغيل على ويندوز:** نزّل `rafid-0.8.4-windows-x64-cuda13.zip`، فكّه، وشغّل `run_rafid.bat`.
+- **التشغيل على ويندوز:** نزّل `rafid-0.8.5-windows-x64-cuda13.zip`، فكّه، وشغّل `run_rafid.bat`.
 - **البناء من المصدر:** `build_windows.bat` أو `./build_linux.sh` أو `tools/build_windows_mingw.sh`.
+- **البحث نفسه:** `docs/paper/rafid-paper.pdf` (ووياه مصدر LaTeX).
 - **بيانات البحث:** `docs/results/` ووياها `docs/REPRODUCE.md`، والأمر `python tools/summarize_results.py docs/results` يطلّع كل الجداول.
 - **الرخصة:** MIT، © 2026 Zaid A. Lateef A. Kareem (`LICENSE`). **الاستشهاد:** `CITATION.cff`. **التغييرات:** `CHANGELOG.md`.
 

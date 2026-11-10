@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.5 (2026-11-10)
+- Speed test in the Tests tab, matched with llama-bench: reading a ~128- and ~512-token prompt from an empty conversation and writing exactly 64 and 512 tokens, twice each after a warm-up, per routing mode (`speed-*.json`).
+- `ignore_eos` generation parameter: write exactly `max_tokens` tokens.
+- `baseline_llama.bat` also measures llama.cpp on 512-token reads and writes.
+- `tools/summarize_results.py` prints the speed tests, every baseline file and every fidelity run, and checks that exact routing matched across runs.
+- `docs/results`: the matched speed test, llama.cpp's 512-token runs, and a second fidelity run (exact routing identical to the first on all 10,840 tokens).
+- `docs/paper`: the paper (PDF and LaTeX source).
+
 ## 0.8.4 (2026-11-09)
 - Evaluators' own test suites: import a suite file (kept byte for byte) or write one in the page, with a self-check of example answers; edit, download, delete.
 - Every suite is identified by the SHA-256 of its file, shown in the page and recorded in each results file (`suite_sha256`, `suite_author`); results files can be downloaded.

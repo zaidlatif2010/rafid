@@ -21,7 +21,7 @@ set "LOG=%OUT%\baseline-llamacpp.log"
 echo Model: %MODEL% > "%LOG%"
 
 echo.
-echo [1/2] Writing: 64 tokens, twice (after a warm-up). This can take 10-20 minutes.
+echo [1/3] Writing: 64 tokens, twice (after a warm-up). This can take 10-20 minutes.
 set NGL=99
 :gen
 echo   trying with %NGL% layers on the GPU...
@@ -37,11 +37,16 @@ if errorlevel 1 (
 type "%LOG%" | findstr /c:"| qwen" 
 
 echo.
-echo [2/2] Reading a question: 128 tokens, twice.
+echo [2/3] Reading a question: 128 tokens, twice.
 echo --- pp ngl=%NGL% >> "%LOG%"
 bin\llama-bench.exe -m "%MODEL%" -ngl %NGL% -ncmoe 99 -p 128 -n 0 -r 2 -o json -oe md > "%OUT%\baseline-llamacpp-pp.json" 2>> "%LOG%"
 type "%LOG%" | findstr /c:"| qwen"
 
+echo.
+echo [3/3] Longer runs: writing 512 tokens and reading a 512-token question, once each. About 10-20 minutes.
+echo --- long ngl=%NGL% >> "%LOG%"
+bin\llama-bench.exe -m "%MODEL%" -ngl %NGL% -ncmoe 99 -p 512 -n 512 -r 1 -o json -oe md > "%OUT%\baseline-llamacpp-long.json" 2>> "%LOG%"
+type "%LOG%" | findstr /c:"| qwen"
 echo.
 echo Done. The results are in %OUT% (baseline-llamacpp-*.json and .log).
 pause

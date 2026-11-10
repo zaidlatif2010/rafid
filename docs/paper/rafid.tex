@@ -1,0 +1,39 @@
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[a4paper, margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{makecell}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage[numbers, sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+
+\definecolor{accent}{HTML}{2A6FB0}
+\setlist{itemsep=2pt, topsep=4pt}
+\captionsetup[table]{skip=4pt}
+
+\title{Rafid: Running a 397B MoE Model on a Laptop\\with Expert Streaming and Cache-Aware Routing}
+\author{Zaid A. Lateef A. Kareem\\[2pt]\normalsize Independent researcher}
+\date{November 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\input{abstract.tex}
+\end{abstract}
+
+\input{body1.tex}
+\input{part2.tex}
+
+\end{document}

@@ -40,7 +40,7 @@ done
 "$CXX" -O2 -std=c++17 -static -s \
     -D_WIN32_WINNT=0x0A00 -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DCPPHTTPLIB_TCP_NODELAY=1 \
     -DGGML_SHARED -DLLAMA_SHARED \
-    -DRAFID_VERSION="\"0.8.4\"" -DRAFID_LLAMA_TAG="\"$TAG\"" \
+    -DRAFID_VERSION="\"0.8.5\"" -DRAFID_LLAMA_TAG="\"$TAG\"" \
     -I"$here/src" -I"$OUT/gen" -I"$L/include" -I"$L/ggml/include" -I"$L/ggml/src" -I"$L/vendor" -I"$L/vendor/cpp-httplib" \
     "$here"/src/*.cpp "$L/vendor/cpp-httplib/httplib.cpp" \
     -L"$OUT/lib" -lllama -lggml -lggml-base -lws2_32 -lshell32 \
